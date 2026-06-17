@@ -1,0 +1,36 @@
+{
+  "name": "attestr",
+  "version": "1.0.0",
+  "description": "Web3 Intelligence Network for DeFi research and smart contract analysis, built on the CROO Agent Protocol",
+  "main": "dist/coordinator/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start:coordinator": "ts-node src/coordinator/index.ts",
+    "start:web-research": "ts-node src/agents/web-research/index.ts",
+    "start:source-verification": "ts-node src/agents/source-verification/index.ts",
+    "start:synthesis": "ts-node src/agents/synthesis/index.ts",
+    "start:risk": "ts-node src/agents/risk/index.ts"
+  },
+  "keywords": [
+    "croo",
+    "agent",
+    "web3",
+    "defi",
+    "smart-contracts",
+    "research",
+    "base",
+    "usdc"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@croo-network/sdk": "^0.2.1",
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
