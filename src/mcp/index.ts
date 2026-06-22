@@ -224,7 +224,8 @@ Leader: ${vault.leader}
 TVL: $${tvl.toLocaleString()}
 APR: ${apr}%
 Commission: ${commission}%
-Followers: ${followers} / ${maxFollowers} (${capacity}% capacity)
+Followers: ${followers}
+Allow Deposits: ${vault.allowDeposits ? 'Yes' : 'No'}
 Closed: ${vault.isClosed ? 'Yes' : 'No'}
 
 RISK SIGNALS:
