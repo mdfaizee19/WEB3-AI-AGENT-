@@ -47,6 +47,24 @@ async function groq(systemPrompt: string, userPrompt: string): Promise<string> {
   return data.choices[0]?.message?.content ?? '';
 }
 
+async function groqJson(systemPrompt: string, userPrompt: string): Promise<string> {
+  const jsonInstruction = '\n\nIMPORTANT: Return ONLY valid JSON. No text before or after. No markdown code blocks. Start your response with { and end with }';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const sys = attempt === 1
+      ? systemPrompt + jsonInstruction
+      : systemPrompt + jsonInstruction + `\n\nCRITICAL (attempt ${attempt}/3): Your previous response was not valid JSON. Output ONLY a JSON object starting with { — nothing else.`;
+    const text = await groq(sys, userPrompt);
+    try {
+      JSON.parse(extractJson(text));
+      return text;
+    } catch {
+      process.stderr.write(`[attestr-mcp] groq returned non-JSON (attempt ${attempt}/3): ${text.slice(0, 150)}\n`);
+      if (attempt === 3) throw new Error(`Groq returned non-JSON after 3 attempts: ${text.slice(0, 200)}`);
+    }
+  }
+  throw new Error('unreachable');
+}
+
 // ── Tool 1: check_contract_risk ───────────────────────────────────────────────
 
 interface EtherscanResponse<T> { status: string; result: T }
@@ -108,7 +126,7 @@ async function checkContractRisk(address: string): Promise<object> {
     for (const t of unique.slice(0, 10)) lines.push(`  ${t.tokenSymbol} (${t.tokenName}) — ${t.contractAddress}`);
   }
 
-  const text = await groq(
+  const text = await groqJson(
     'You are a blockchain security expert. Produce calibrated, accurate risk scores — not conservative over-scoring.',
     `On-chain data:\n${lines.join('\n')}\n\nReturn JSON: {"badge":"SAFE"|"CAUTION"|"DANGEROUS","riskScore":0,"reasons":["..."],"report":"..."}\n0-30=SAFE,31-65=CAUTION,66-100=DANGEROUS. No markdown fences.`,
   );
@@ -159,7 +177,7 @@ async function researchWeb3(query: string): Promise<object> {
     return `[${i + 1}] ${f.title} (${s})\nSource: ${f.url}\n${f.snippet}`;
   }).join('\n\n');
 
-  const text = await groq(
+  const text = await groqJson(
     'You are a Web3 Intelligence analyst specializing in DeFi research and smart contract analysis.',
     `Query: "${query}"\n\nFindings (${vf.length} verified, ${uf.length} unverified):\n\n${findingsText || 'No findings.'}\n\nReturn JSON: {"executiveSummary":"...","keyFindings":["..."],"riskAssessment":"...","recommendations":["..."],"confidenceScore":0,"report":"..."}\nNo markdown fences.`,
   );
@@ -173,7 +191,7 @@ async function researchWeb3(query: string): Promise<object> {
     keyFindings: parsed.keyFindings,
     riskAssessment: parsed.riskAssessment,
     recommendations: parsed.recommendations,
-    confidenceScore: Math.max(0, Math.min(100, parsed.confidenceScore)),
+    confidenceScore: Math.max(0, Math.min(100, parsed.confidenceScore < 1 ? parsed.confidenceScore * 100 : parsed.confidenceScore)),
     verifiedSources: [...verifiedUrls],
     unverifiedSources: uf.map((f) => f.url),
     report: parsed.report,
@@ -218,7 +236,7 @@ async function analyzeHyperliquidVault(vaultAddress: string): Promise<object> {
   // Hyperliquid does not expose a maxFollowers cap; use maxDistributable as capacity proxy
   const maxFollowers = 0;
 
-  const text = await groq(
+  const text = await groqJson(
     'You are a DeFi analyst specializing in Hyperliquid vault strategies. Provide calibrated, accurate risk assessments.',
     `Hyperliquid Vault:
 Name: ${vault.name}

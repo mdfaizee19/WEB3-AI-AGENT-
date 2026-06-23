@@ -56,6 +56,24 @@ async function groq(systemPrompt: string, userPrompt: string): Promise<string> {
   return data.choices[0]?.message?.content ?? '';
 }
 
+async function groqJson(systemPrompt: string, userPrompt: string): Promise<string> {
+  const jsonInstruction = '\n\nIMPORTANT: Return ONLY valid JSON. No text before or after. No markdown code blocks. Start your response with { and end with }';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const sys = attempt === 1
+      ? systemPrompt + jsonInstruction
+      : systemPrompt + jsonInstruction + `\n\nCRITICAL (attempt ${attempt}/3): Your previous response was not valid JSON. Output ONLY a JSON object starting with { — nothing else.`;
+    const text = await groq(sys, userPrompt);
+    try {
+      JSON.parse(extractJson(text));
+      return text;
+    } catch {
+      console.error(`[coordinator] groq returned non-JSON (attempt ${attempt}/3):`, text.slice(0, 150));
+      if (attempt === 3) throw new Error(`Groq returned non-JSON after 3 attempts: ${text.slice(0, 200)}`);
+    }
+  }
+  throw new Error('unreachable');
+}
+
 // â”€â”€ Stage 1: Web Research (Serper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface SerperOrganicResult { title: string; link: string; snippet: string; source?: string }
@@ -142,7 +160,7 @@ Produce a structured intelligence report as a JSON object with exactly these fie
 Return only valid JSON. No markdown fences around the JSON itself.`;
 
   try {
-    const text = await groq(
+    const text = await groqJson(
       'You are a Web3 Intelligence analyst specializing in DeFi research and smart contract analysis.',
       userPrompt,
     );
@@ -160,7 +178,7 @@ Return only valid JSON. No markdown fences around the JSON itself.`;
       keyFindings: parsed.keyFindings,
       riskAssessment: parsed.riskAssessment,
       recommendations: parsed.recommendations,
-      confidenceScore: Math.max(0, Math.min(100, parsed.confidenceScore)),
+      confidenceScore: Math.max(0, Math.min(100, parsed.confidenceScore < 1 ? parsed.confidenceScore * 100 : parsed.confidenceScore)),
       verifiedSources: [...verifiedUrls],
       unverifiedSources: unverifiedFindings.map((f) => f.url),
       report: parsed.report,
@@ -298,24 +316,36 @@ Scoring guide: 0-30 â†’ SAFE, 31-65 â†’ CAUTION, 66-100 â†’ DANGE
 A verified, named, proxy-pattern stablecoin contract with no anomalous on-chain behaviour should score in the SAFE range.
 Return only valid JSON. No markdown fences.`;
 
-  const text = await groq(
-    'You are a blockchain security expert specializing in Ethereum and EVM chain risk analysis. Your goal is accurate, calibrated risk assessment â€” not conservative over-scoring. Well-known, verified, audited contracts should score low. Reserve high scores for genuine threats.',
-    userPrompt,
-  );
-  const parsed = JSON.parse(extractJson(text)) as {
-    badge: 'SAFE' | 'CAUTION' | 'DANGEROUS';
-    riskScore: number;
-    reasons: string[];
-    report: string;
-  };
-  return {
-    address: task.address,
-    badge: parsed.badge,
-    riskScore: Math.max(0, Math.min(100, parsed.riskScore)),
-    reasons: parsed.reasons,
-    report: parsed.report,
-    analyzedAt: new Date().toISOString(),
-  };
+  try {
+    const text = await groqJson(
+      'You are a blockchain security expert specializing in Ethereum and EVM chain risk analysis. Your goal is accurate, calibrated risk assessment â€” not conservative over-scoring. Well-known, verified, audited contracts should score low. Reserve high scores for genuine threats.',
+      userPrompt,
+    );
+    const parsed = JSON.parse(extractJson(text)) as {
+      badge: 'SAFE' | 'CAUTION' | 'DANGEROUS';
+      riskScore: number;
+      reasons: string[];
+      report: string;
+    };
+    return {
+      address: task.address,
+      badge: parsed.badge,
+      riskScore: Math.max(0, Math.min(100, parsed.riskScore)),
+      reasons: parsed.reasons,
+      report: parsed.report,
+      analyzedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[coordinator] risk analysis failed after retries:', err);
+    return {
+      address: task.address,
+      badge: 'CAUTION' as const,
+      riskScore: 50,
+      reasons: ['Risk analysis unavailable — AI service returned non-JSON response'],
+      report: '## Risk Analysis\n\nUnable to complete AI risk analysis. On-chain data was gathered but synthesis failed.',
+      analyzedAt: new Date().toISOString(),
+    };
+  }
 }
 
 // â”€â”€ Request parsers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -513,36 +543,54 @@ Return a JSON object with exactly these fields:
 Scoring: 0-30 = SAFE, 31-65 = CAUTION, 66-100 = DANGEROUS. Badge must match score.
 Return only valid JSON. No markdown fences.`;
 
-  const text = await groq(
-    'You are a DeFi analyst specializing in on-chain vault strategies and Hyperliquid perpetuals trading. Provide calibrated, accurate risk assessments.',
-    userPrompt,
-  );
-  const parsed = JSON.parse(extractJson(text)) as {
-    badge: 'SAFE' | 'CAUTION' | 'DANGEROUS';
-    riskScore: number;
-    vaultOverview: string;
-    performanceAnalysis: string;
-    riskFactors: string[];
-    recommendation: string;
-    report: string;
-  };
+  try {
+    const text = await groqJson(
+      'You are a DeFi analyst specializing in on-chain vault strategies and Hyperliquid perpetuals trading. Provide calibrated, accurate risk assessments.',
+      userPrompt,
+    );
+    const parsed = JSON.parse(extractJson(text)) as {
+      badge: 'SAFE' | 'CAUTION' | 'DANGEROUS';
+      riskScore: number;
+      vaultOverview: string;
+      performanceAnalysis: string;
+      riskFactors: string[];
+      recommendation: string;
+      report: string;
+    };
 
-  console.log(`[coordinator] hyperliquid: ${vault.name} → ${parsed.badge} (score: ${parsed.riskScore}/100)`);
+    console.log(`[coordinator] hyperliquid: ${vault.name} → ${parsed.badge} (score: ${parsed.riskScore}/100)`);
 
-  return {
-    vaultAddress: task.vaultAddress,
-    name: vault.name,
-    tvl,
-    apr,
-    leader: vault.leader,
-    followers,
-    maxFollowers,
-    commission,
-    badge: parsed.badge,
-    riskScore: Math.max(0, Math.min(100, parsed.riskScore)),
-    report: parsed.report,
-    analyzedAt: new Date().toISOString(),
-  };
+    return {
+      vaultAddress: task.vaultAddress,
+      name: vault.name,
+      tvl,
+      apr,
+      leader: vault.leader,
+      followers,
+      maxFollowers,
+      commission,
+      badge: parsed.badge,
+      riskScore: Math.max(0, Math.min(100, parsed.riskScore)),
+      report: parsed.report,
+      analyzedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[coordinator] hyperliquid analysis failed after retries:', err);
+    return {
+      vaultAddress: task.vaultAddress,
+      name: vault.name,
+      tvl,
+      apr,
+      leader: vault.leader,
+      followers,
+      maxFollowers,
+      commission,
+      badge: 'CAUTION' as const,
+      riskScore: 50,
+      report: '## Vault Analysis\n\nUnable to complete AI analysis. Raw vault data was fetched but synthesis failed.',
+      analyzedAt: new Date().toISOString(),
+    };
+  }
 }
 
 
