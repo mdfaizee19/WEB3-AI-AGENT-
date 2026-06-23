@@ -599,7 +599,14 @@ interface OrderEntry {
   serviceId: string;
 }
 
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
+  // Short delay on startup so any previous connection (e.g. from a PM2 restart) has time to close
+  await sleep(3000);
+
   const client = new AgentClient(CROO_CONFIG, requireEnv('CROO_SDK_KEY_COORDINATOR'));
   const stream = await client.connectWebSocket();
   console.log('[coordinator] online — services: research | risk_check | due_diligence | hyperliquid_vault');
@@ -673,10 +680,15 @@ async function main() {
     }
   });
 
-  process.on('SIGINT', () => {
+  function shutdown() {
+    console.log('[coordinator] shutting down — closing WebSocket');
     stream.close();
-    process.exit(0);
-  });
+    // Give the WS close frame time to reach the server before exiting
+    setTimeout(() => process.exit(0), 1500);
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => {
