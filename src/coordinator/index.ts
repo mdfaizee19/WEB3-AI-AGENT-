@@ -377,6 +377,20 @@ function parseRiskRequest(requirements: string): RiskAnalysisTask {
   throw new Error(`No Ethereum address found in requirements: ${requirements}`);
 }
 
+function parseHyperliquidRequest(requirements: string): HyperliquidVaultTask {
+  let parsed: unknown = null;
+  try { parsed = JSON.parse(requirements); } catch { /* fall through */ }
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    const addr = obj.vaultAddress ?? obj.address ?? obj.vault_address;
+    if (typeof addr === 'string') return { vaultAddress: addr };
+  }
+  const plain = typeof parsed === 'string' ? parsed : requirements;
+  const match = ETH_ADDRESS_RE.exec(plain);
+  if (match) return { vaultAddress: match[0] };
+  throw new Error(`No vault address found in requirements: ${requirements}`);
+}
+
 function parseDueDiligenceRequest(requirements: string): DueDiligenceRequest {
   let parsed: unknown = null;
   try { parsed = JSON.parse(requirements); } catch { /* fall through */ }
@@ -658,7 +672,7 @@ async function main() {
         result = await runDueDiligencePipeline(requirements);
         pipelineLabel = 'due_diligence';
       } else if (serviceId === HL_SVC) {
-        result = await runHyperliquidPipeline(JSON.parse(requirements) as HyperliquidVaultTask);
+        result = await runHyperliquidPipeline(parseHyperliquidRequest(requirements));
         pipelineLabel = 'hyperliquid_vault';
       } else {
         throw new Error(`Unknown service ID: ${serviceId}`);
