@@ -618,8 +618,8 @@ async function sleep(ms: number): Promise<void> {
 }
 
 async function main() {
-  // Short delay on startup so any previous connection (e.g. from a PM2 restart) has time to close
-  await sleep(3000);
+  // Delay startup so any previous Railway instance has time to receive SIGTERM and close its WS connection
+  await sleep(6000);
 
   const client = new AgentClient(CROO_CONFIG, requireEnv('CROO_SDK_KEY_COORDINATOR'));
   const stream = await client.connectWebSocket();
@@ -698,7 +698,7 @@ async function main() {
     console.log('[coordinator] shutting down — closing WebSocket');
     stream.close();
     // Give the WS close frame time to reach the server before exiting
-    setTimeout(() => process.exit(0), 1500);
+    setTimeout(() => process.exit(0), 3000);
   }
 
   process.on('SIGINT', shutdown);
