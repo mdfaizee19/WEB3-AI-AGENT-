@@ -1,4 +1,5 @@
 import dotenv from 'dotenv'; dotenv.config({ override: true });
+import http from 'http';
 import { AgentClient, EventType, DeliverableType, APIError } from '@croo-network/sdk';
 import { CROO_CONFIG, requireEnv } from '../config';
 import type {
@@ -637,12 +638,32 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const STARTED_AT = new Date();
+let wsConnected = false;
+
+function buildServiceLabels(): Record<string, string> {
+  const map: Record<string, string> = {};
+  const pairs: [string, string][] = [
+    ['CROO_SERVICE_ID_RESEARCH', 'Research Query'],
+    ['CROO_SERVICE_ID_RISK_CHECK', 'Contract Risk Check'],
+    ['CROO_SERVICE_ID_RISK', 'Risk Agent'],
+    ['CROO_SERVICE_ID_DUE_DILIGENCE', 'Full Due Diligence'],
+    ['CROO_SERVICE_ID_HYPERLIQUID', 'Hyperliquid Vault'],
+  ];
+  for (const [envKey, label] of pairs) {
+    const id = process.env[envKey];
+    if (id) map[id] = label;
+  }
+  return map;
+}
+
 async function main() {
   // Delay startup so any previous Railway instance has time to receive SIGTERM and close its WS connection
   await sleep(6000);
 
   const client = new AgentClient(CROO_CONFIG, requireEnv('CROO_SDK_KEY_COORDINATOR'));
   const stream = await client.connectWebSocket();
+  wsConnected = true;
   console.log('[coordinator] online -- services: research | risk_check | due_diligence | hyperliquid_vault');
 
   // orderId -> { requirements, serviceId } -- populated at accept, consumed at OrderPaid
@@ -670,6 +691,65 @@ async function main() {
     console.error('[coordinator] startup recovery failed:', err);
   }
 
+  // ── HTTP dashboard API ────────────────────────────────────────────────────────
+  const API_PORT = parseInt(process.env['PORT'] ?? '8080');
+  const DASHBOARD_SECRET = process.env['DASHBOARD_SECRET'] ?? '';
+  const serviceLabels = buildServiceLabels();
+
+  const httpServer = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+    if (DASHBOARD_SECRET) {
+      const auth = (req.headers['authorization'] ?? '').replace('Bearer ', '');
+      if (auth !== DASHBOARD_SECRET) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+    }
+
+    const pathname = new URL(req.url ?? '/', `http://localhost`).pathname;
+
+    if (pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: wsConnected ? 'online' : 'offline',
+        uptimeSeconds: Math.floor((Date.now() - STARTED_AT.getTime()) / 1000),
+        startedAt: STARTED_AT.toISOString(),
+        activeOrders: userOrders.size,
+        services: ['Research Query', 'Contract Risk Check', 'Full Due Diligence', 'Hyperliquid Vault'],
+      }));
+      return;
+    }
+
+    if (pathname === '/api/orders') {
+      try {
+        const raw = await client.listOrders({ role: 'provider' } as Parameters<typeof client.listOrders>[0]);
+        const list: unknown[] = Array.isArray(raw) ? raw : ((raw as { orders?: unknown[] }).orders ?? []);
+        const orders = list.map((o) => {
+          const order = o as Record<string, unknown>;
+          const svcId = typeof order['serviceId'] === 'string' ? order['serviceId'] : '';
+          return { ...order, serviceName: serviceLabels[svcId] ?? svcId };
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ orders }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  httpServer.listen(API_PORT, () => {
+    console.log(`[coordinator] HTTP API on port ${API_PORT}`);
+  });
+
   stream.on(EventType.NegotiationCreated, async (e) => {
     try {
       const result = await client.acceptNegotiation(e.negotiation_id!);
@@ -695,9 +775,10 @@ async function main() {
   });
 
   function shutdown() {
+    wsConnected = false;
     console.log('[coordinator] shutting down -- closing WebSocket');
     stream.close();
-    // Give the WS close frame time to reach the server before exiting
+    httpServer.close();
     setTimeout(() => process.exit(0), 3000);
   }
 

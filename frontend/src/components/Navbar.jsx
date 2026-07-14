@@ -35,6 +35,13 @@ export default function Navbar() {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+          <Link to="/dashboard"
+            style={{ fontSize: '.88rem', color: loc.pathname === '/dashboard' ? C.green : C.muted,
+              textDecoration: 'none', fontFamily: 'Times New Roman, serif', transition: 'color .2s' }}
+            onMouseEnter={e => e.target.style.color = C.green}
+            onMouseLeave={e => e.target.style.color = loc.pathname === '/dashboard' ? C.green : C.muted}>
+            Dashboard
+          </Link>
           {isHome && ['Services','Protocols','Roadmap'].map(l => (
             <a key={l} href={`#${l.toLowerCase()}`}
               style={{ fontSize: '.88rem', color: C.muted, textDecoration: 'none',
