@@ -7,6 +7,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { AgentClient } from '@croo-network/sdk';
+import { CROO_CONFIG } from '../config';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const SERVER_URL = (process.env.SERVER_URL ?? `http://localhost:${PORT}`).replace(/\/$/, '');
@@ -355,6 +357,88 @@ async function fullDueDiligence(query: string): Promise<object> {
   };
 }
 
+// ── Tool 5: get_agent_status ──────────────────────────────────────────────────
+
+async function getAgentStatus(): Promise<object> {
+  const coordinatorUrl = (process.env['COORDINATOR_URL'] ?? '').replace(/\/$/, '');
+  const dashboardSecret = process.env['DASHBOARD_SECRET'] ?? '';
+
+  if (!coordinatorUrl) {
+    return { error: 'COORDINATOR_URL not configured on this MCP server' };
+  }
+
+  const res = await fetch(`${coordinatorUrl}/health`, {
+    headers: { Authorization: `Bearer ${dashboardSecret}` },
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (res.status === 401) return { error: 'Coordinator returned 401 — check DASHBOARD_SECRET' };
+  if (!res.ok) return { error: `Coordinator returned ${res.status}` };
+
+  const data = (await res.json()) as {
+    status: string; uptimeSeconds: number; startedAt: string;
+    activeOrders: number; services: string[];
+  };
+
+  const uptimeSec = data.uptimeSeconds ?? 0;
+  const h = Math.floor(uptimeSec / 3600);
+  const m = Math.floor((uptimeSec % 3600) / 60);
+  const s = uptimeSec % 60;
+  const uptimeHuman = h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+
+  return {
+    status: data.status,
+    uptime: uptimeHuman,
+    uptimeSeconds: data.uptimeSeconds,
+    startedAt: data.startedAt,
+    activeOrders: data.activeOrders,
+    services: data.services,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+// ── Tool 6: list_orders ───────────────────────────────────────────────────────
+
+const SERVICE_LABELS: Record<string, string> = {
+  [process.env['CROO_SERVICE_ID_RESEARCH'] ?? '']: 'Research Query',
+  [process.env['CROO_SERVICE_ID_RISK_CHECK'] ?? '']: 'Contract Risk Check',
+  [process.env['CROO_SERVICE_ID_RISK'] ?? '']: 'Risk Agent',
+  [process.env['CROO_SERVICE_ID_DUE_DILIGENCE'] ?? '']: 'Full Due Diligence',
+  [process.env['CROO_SERVICE_ID_HYPERLIQUID'] ?? '']: 'Hyperliquid Vault',
+};
+
+async function listAgentOrders(status?: string): Promise<object> {
+  const sdkKey = process.env['CROO_SDK_KEY_COORDINATOR'] ?? '';
+  if (!sdkKey) return { error: 'CROO_SDK_KEY_COORDINATOR not configured on this MCP server' };
+
+  const client = new AgentClient(CROO_CONFIG, sdkKey);
+  const filter: Record<string, string> = { role: 'provider' };
+  if (status) filter['status'] = status;
+
+  const raw = await client.listOrders(filter as Parameters<typeof client.listOrders>[0]);
+  const list: unknown[] = Array.isArray(raw) ? raw : ((raw as { orders?: unknown[] }).orders ?? []);
+
+  const orders = list.map((o) => {
+    const order = o as Record<string, unknown>;
+    const svcId = typeof order['serviceId'] === 'string' ? order['serviceId'] : '';
+    return {
+      orderId: order['orderId'],
+      serviceName: SERVICE_LABELS[svcId] || svcId,
+      status: order['status'],
+      createdAt: order['createdAt'],
+      price: order['price'] ?? order['amount'] ?? null,
+    };
+  }).sort((a, b) =>
+    new Date(String(b.createdAt ?? 0)).getTime() - new Date(String(a.createdAt ?? 0)).getTime()
+  );
+
+  return {
+    total: orders.length,
+    orders,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 // ── MCP Server factory ────────────────────────────────────────────────────────
 // Creates a fresh Server instance with all 4 tools registered.
 // Called once per stateless /mcp request so each request is fully independent.
@@ -411,6 +495,26 @@ function createMcpServer(): Server {
           required: ['query'],
         },
       },
+      {
+        name: 'get_agent_status',
+        description: 'Check whether the Attestr coordinator agent is online on Railway. Returns status (online/offline), uptime, number of active orders being processed, and list of active services.',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'list_orders',
+        description: 'List orders received by the Attestr agent on the CROO network. Returns order history with service name, status, and timestamp. Optionally filter by status (negotiating, paid, delivered, rejected, cancelled).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              description: 'Optional status filter: negotiating | paid | delivered | rejected | cancelled',
+              enum: ['negotiating', 'paid', 'delivered', 'rejected', 'cancelled'],
+            },
+          },
+          required: [],
+        },
+      },
     ],
   }));
 
@@ -432,6 +536,11 @@ function createMcpServer(): Server {
       } else if (name === 'full_due_diligence') {
         const { query } = args as { query: string };
         result = await fullDueDiligence(query);
+      } else if (name === 'get_agent_status') {
+        result = await getAgentStatus();
+      } else if (name === 'list_orders') {
+        const { status } = args as { status?: string };
+        result = await listAgentOrders(status);
       } else {
         throw new Error(`Unknown tool: ${name}`);
       }
