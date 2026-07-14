@@ -1,5 +1,6 @@
 import dotenv from 'dotenv'; dotenv.config({ override: true });
 import http from 'http';
+import crypto from 'crypto';
 import { AgentClient, EventType, DeliverableType, APIError } from '@croo-network/sdk';
 import { CROO_CONFIG, requireEnv } from '../config';
 import type {
@@ -694,6 +695,9 @@ async function main() {
   // ── HTTP dashboard API ────────────────────────────────────────────────────────
   const API_PORT = parseInt(process.env['PORT'] ?? '8080');
   const DASHBOARD_SECRET = process.env['DASHBOARD_SECRET'] ?? '';
+  if (!DASHBOARD_SECRET) {
+    console.warn('[coordinator] DASHBOARD_SECRET not set — HTTP API will reject all requests');
+  }
   const serviceLabels = buildServiceLabels();
 
   const httpServer = http.createServer(async (req, res) => {
@@ -701,13 +705,17 @@ async function main() {
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-    if (DASHBOARD_SECRET) {
-      const auth = (req.headers['authorization'] ?? '').replace('Bearer ', '');
-      if (auth !== DASHBOARD_SECRET) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
-        return;
-      }
+    // Always require auth — fail closed if secret is not configured
+    const auth = (req.headers['authorization'] ?? '').replace('Bearer ', '');
+    const secretBuf = Buffer.from(DASHBOARD_SECRET || '\0');
+    const authBuf   = Buffer.from(auth || '\0');
+    const valid = DASHBOARD_SECRET.length > 0
+      && auth.length === DASHBOARD_SECRET.length
+      && crypto.timingSafeEqual(authBuf, secretBuf);
+    if (!valid) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
     }
 
     const pathname = new URL(req.url ?? '/', `http://localhost`).pathname;
@@ -736,8 +744,9 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ orders }));
       } catch (err) {
+        console.error('[coordinator] /api/orders failed:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: 'internal_error' }));
       }
       return;
     }
