@@ -7,7 +7,7 @@ Attestr is a multi-agent DeFi research and smart contract analysis platform. It 
 | Service | URL |
 |---|---|
 | Frontend | https://attestr-frontend.vercel.app |
-| MCP Server | https://attestrmcp-production.up.railway.app |
+| MCP Server | https://attestr-mcp-production.up.railway.app |
 | Backend (CAP) | Railway — 24/7 |
 
 ---
@@ -32,15 +32,15 @@ Prices are configured in the CROO Dashboard per service. All payments settle on 
 ### Connect via Claude.ai (recommended)
 
 1. Go to **Claude.ai → Settings → Integrations → Add MCP Server**
-2. Enter: `https://attestrmcp-production.up.railway.app`
+2. Enter: `https://attestr-mcp-production.up.railway.app/mcp` (must include the `/mcp` path — Claude.ai sends protocol calls to exactly the URL you enter, not a discovered sub-path)
 3. Claude.ai will redirect you to the OAuth authorization page
 4. Enter your `MCP_API_KEY` to grant access
-5. All 4 tools are now available in Claude.ai
+5. All 6 tools are now available in Claude.ai
 
 ### Connect via Claude Code
 
 ```bash
-claude mcp add attestr --transport http https://attestrmcp-production.up.railway.app/mcp
+claude mcp add attestr --transport http https://attestr-mcp-production.up.railway.app/mcp
 ```
 
 Set the `Authorization` header using your `MCP_API_KEY`:
@@ -50,7 +50,7 @@ Set the `Authorization` header using your `MCP_API_KEY`:
   "mcpServers": {
     "attestr": {
       "type": "http",
-      "url": "https://attestrmcp-production.up.railway.app/mcp",
+      "url": "https://attestr-mcp-production.up.railway.app/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_API_KEY"
       }
@@ -62,8 +62,8 @@ Set the `Authorization` header using your `MCP_API_KEY`:
 ### Run locally
 
 ```bash
-git clone https://github.com/mdfaizee19/Attestr.CROO.git
-cd Attestr.CROO
+git clone https://github.com/mdfaizee19/ATTESTR-CROO.git
+cd ATTESTR-CROO
 cp .env.example .env   # fill in your API keys
 npm install
 npm run mcp:http       # starts HTTP MCP server on port 3001
@@ -95,6 +95,18 @@ analyze_hyperliquid_vault("0x010461C14e146ac35Fe42271BDC1134EE31C703a")
 ```
 full_due_diligence("Is Aave V3 safe on Base? 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5")
 → Combined report: research + on-chain risk + overall confidence score
+```
+
+**Check if the agent is online:**
+```
+get_agent_status()
+→ { status: "online", uptime: "2h 14m 3s", activeOrders: 0, services: [...] }
+```
+
+**List incoming orders:**
+```
+list_orders(status: "paid")
+→ { total: 3, orders: [{ orderId, serviceName, status, createdAt, price }, ...] }
 ```
 
 ---
@@ -184,8 +196,10 @@ ETHERSCAN_API_KEY=     # Etherscan v2 — on-chain data
 MCP_API_KEY=           # Bearer token for Claude.ai OAuth
 SERVER_URL=            # Public URL (Railway or ngrok)
 PORT=3001
+COORDINATOR_URL=       # Coordinator's internal URL, used by get_agent_status (e.g. http://attestrcroo.railway.internal:8080)
+DASHBOARD_SECRET=      # Shared secret between MCP server and coordinator's /health endpoint
 
-# CROO (CAP backend only)
+# CROO (CAP backend + list_orders tool)
 CROO_SDK_KEY_COORDINATOR=
 CROO_SERVICE_ID_RESEARCH=
 CROO_SERVICE_ID_RISK_CHECK=
@@ -193,4 +207,4 @@ CROO_SERVICE_ID_DUE_DILIGENCE=
 CROO_SERVICE_ID_HYPERLIQUID=
 ```
 
-See [docs/MCP-INTEGRATION.md](docs/MCP-INTEGRATION.md) for MCP setup and [docs/CAP-INTEGRATION.md](docs/CAP-INTEGRATION.md) for CAP/CROO integration.
+See [MCP-INTEGRATION.md](MCP-INTEGRATION.md) for MCP setup and [CAP-INTEGRATION.md](CAP-INTEGRATION.md) for CAP/CROO integration.

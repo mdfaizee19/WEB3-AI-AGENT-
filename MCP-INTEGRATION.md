@@ -6,11 +6,11 @@ The **Model Context Protocol (MCP)** is an open standard from Anthropic that let
 
 Attestr's MCP server (`src/mcp/index.ts`) runs as an HTTP server with OAuth 2.0 authentication, making it compatible with Claude.ai's remote MCP connector — no local installation required.
 
-**MCP Server URL:** `https://attestrmcp-production.up.railway.app`
+**MCP Server URL:** `https://attestr-mcp-production.up.railway.app`
 
 ---
 
-## 4 Available Tools
+## 6 Available Tools
 
 ### 1. `check_contract_risk`
 
@@ -136,18 +136,67 @@ Runs research and contract risk analysis together, then combines them into a sin
 
 ---
 
+### 5. `get_agent_status`
+
+Checks whether the Attestr coordinator (the CAP backend that takes orders from the CROO network) is online, and reports uptime and active order count. Calls the coordinator's `/health` endpoint over Railway's private network, authenticated with `DASHBOARD_SECRET`.
+
+**Input:** none
+
+**Output:**
+```json
+{
+  "status": "online",
+  "uptime": "2h 14m 3s",
+  "uptimeSeconds": 8043,
+  "startedAt": "2026-07-15T01:28:58.982Z",
+  "activeOrders": 0,
+  "services": ["Research Query", "Contract Risk Check", "Full Due Diligence", "Hyperliquid Vault"],
+  "checkedAt": "2026-07-15T03:42:11.000Z"
+}
+```
+
+If `COORDINATOR_URL` isn't configured, or the coordinator returns 401, this tool returns a descriptive `error` field instead of throwing — check `DASHBOARD_SECRET` matches on both services.
+
+---
+
+### 6. `list_orders`
+
+Lists orders received by the coordinator on the CROO network, most recent first, with human-readable service names (mapped from `CROO_SERVICE_ID_*`). Calls the CROO API directly via `@croo-network/sdk`, authenticated with `CROO_SDK_KEY_COORDINATOR` — independent of the coordinator's own uptime.
+
+**Input:**
+```json
+{ "status": "paid" }
+```
+`status` is optional: `negotiating | paid | delivered | rejected | cancelled`. Omit it to list all orders.
+
+**Output:**
+```json
+{
+  "total": 2,
+  "orders": [
+    { "orderId": "3a1816d3-...", "serviceName": "Contract Risk Check", "status": "completed", "createdAt": "2026-07-14T09:39:59Z", "price": null },
+    { "orderId": "254ff4df-...", "serviceName": "Hyperliquid Vault", "status": "rejected", "createdAt": "2026-07-14T03:18:17Z", "price": null }
+  ],
+  "fetchedAt": "2026-07-15T03:42:30.000Z"
+}
+```
+
+`price` is currently `null`/empty for all orders — the CROO API doesn't populate a price or amount field on order records yet.
+
+---
+
 ## Connect to Claude.ai
 
 The easiest way — no local setup needed.
 
 1. Go to **Claude.ai → Settings → Integrations → Add MCP Server**
-2. Enter the server URL: `https://attestrmcp-production.up.railway.app`
+2. Enter the server URL **including the `/mcp` path**: `https://attestr-mcp-production.up.railway.app/mcp` — Claude.ai sends protocol calls directly to whatever URL you enter here, it does not discover `/mcp` on its own. Entering the bare domain will authorize successfully but then fail to connect with "Attestr returned an error."
 3. Claude.ai fetches `/.well-known/oauth-authorization-server` and starts the OAuth flow
 4. You are redirected to the Attestr authorization page
 5. Enter your `MCP_API_KEY` and click **Authorize**
 6. Claude.ai stores the bearer token and connects to `/mcp`
 
-All 4 tools now appear in Claude.ai automatically. Ask Claude: *"What MCP tools do you have?"* to confirm.
+All 6 tools now appear in Claude.ai automatically. Ask Claude: *"What MCP tools do you have?"* to confirm.
 
 ---
 
@@ -156,7 +205,7 @@ All 4 tools now appear in Claude.ai automatically. Ask Claude: *"What MCP tools 
 ### Option A — HTTP transport (remote server, no local install)
 
 ```bash
-claude mcp add attestr --transport http https://attestrmcp-production.up.railway.app/mcp
+claude mcp add attestr --transport http https://attestr-mcp-production.up.railway.app/mcp
 ```
 
 Add the bearer token to your project's `.mcp.json`:
@@ -166,7 +215,7 @@ Add the bearer token to your project's `.mcp.json`:
   "mcpServers": {
     "attestr": {
       "type": "http",
-      "url": "https://attestrmcp-production.up.railway.app/mcp",
+      "url": "https://attestr-mcp-production.up.railway.app/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_API_KEY"
       }
@@ -179,8 +228,8 @@ Add the bearer token to your project's `.mcp.json`:
 
 1. Clone the repo and install dependencies:
 ```bash
-git clone https://github.com/mdfaizee19/Attestr.CROO.git
-cd Attestr.CROO
+git clone https://github.com/mdfaizee19/ATTESTR-CROO.git
+cd ATTESTR-CROO
 npm install
 cp .env.example .env   # fill in your API keys
 ```
@@ -192,7 +241,7 @@ cp .env.example .env   # fill in your API keys
     "attestr": {
       "command": "npx",
       "args": ["ts-node", "src/mcp/index.ts"],
-      "cwd": "/path/to/Attestr.CROO"
+      "cwd": "/path/to/ATTESTR-CROO"
     }
   }
 }
@@ -237,7 +286,7 @@ MCP_API_KEY=your_generated_key_here
 ## Running the MCP Server Locally
 
 ```bash
-# Start HTTP MCP server (OAuth + all 4 tools)
+# Start HTTP MCP server (OAuth + all 6 tools)
 npm run mcp:http
 
 # Server listens on port 3001 by default
@@ -262,12 +311,16 @@ Startup log:
 | Variable | Required | Description |
 |---|---|---|
 | `MCP_API_KEY` | Yes | Bearer token secret — generate with `crypto.randomBytes(32).toString('hex')` |
-| `GROQ_API_KEY` | Yes | Groq API key — used by all 4 tools for AI synthesis |
+| `GROQ_API_KEY` | Yes | Groq API key — used by 4 of the 6 tools for AI synthesis |
 | `SERPER_API_KEY` | For research tools | Serper Google Search API key |
 | `ETHERSCAN_API_KEY` | For risk tools | Etherscan v2 API key |
 | `SERVER_URL` | For Claude.ai | Public URL of the MCP server (Railway or ngrok) |
 | `PORT` | No | HTTP port (default: `3001`) |
 | `OAUTH_REDIRECT_URI` | No | Exact callback URL allowlist (e.g. `https://claude.ai/api/mcp/auth_callback`) |
+| `COORDINATOR_URL` | For `get_agent_status` | Coordinator's internal URL, e.g. `http://attestrcroo.railway.internal:8080` (use Railway private networking, not a public domain) |
+| `DASHBOARD_SECRET` | For `get_agent_status` | Shared secret — must match the same variable set on the coordinator service |
+| `CROO_SDK_KEY_COORDINATOR` | For `list_orders` | CROO SDK key — same one the coordinator uses to authenticate to the CROO API |
+| `CROO_SERVICE_ID_*` | Optional | Service IDs used to map order `serviceId` to a human-readable name in `list_orders` output |
 
 ---
 
