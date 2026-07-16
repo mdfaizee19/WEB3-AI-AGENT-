@@ -512,15 +512,18 @@ async function runDueDiligencePipeline(requirements: string): Promise<DueDiligen
 
 // ── Stage 5: Hyperliquid Vault Analysis ──────────────────────────────────────
 
+interface HyperliquidVaultFollower { user: string; vaultEquity: string }
+interface HyperliquidVaultPortfolioEntry { accountValueHistory: [number, string][] }
 interface HyperliquidVaultDetails {
   name: string;
   leader: string;
-  tvl: string;
-  maxFollowers: number;
-  numFollowers: number;
   apr: number;
-  commission: number;
+  leaderCommission: number;
   isClosed: boolean;
+  allowDeposits: boolean;
+  followers: HyperliquidVaultFollower[];
+  maxDistributable: number;
+  portfolio: [string, HyperliquidVaultPortfolioEntry][];
 }
 
 async function runHyperliquidPipeline(task: HyperliquidVaultTask): Promise<HyperliquidVaultResult> {
@@ -537,15 +540,25 @@ async function runHyperliquidPipeline(task: HyperliquidVaultTask): Promise<Hyper
     throw new Error(`Hyperliquid API returned invalid vault data for ${task.vaultAddress}`);
   }
   const vault = vaultPayload as HyperliquidVaultDetails;
-  if (vault.tvl == null || vault.name == null || vault.leader == null) {
+  if (vault.name == null || vault.leader == null) {
     throw new Error(`Hyperliquid vault not found or invalid for ${task.vaultAddress}`);
   }
 
-  const tvl = parseFloat(vault.tvl ?? '0');
+  // TVL: latest accountValueHistory entry across portfolio periods
+  let tvl = 0;
+  for (const [, entry] of vault.portfolio ?? []) {
+    const hist = entry?.accountValueHistory ?? [];
+    if (hist.length > 0) {
+      const latest = parseFloat(hist[hist.length - 1][1]);
+      if (latest > tvl) tvl = latest;
+    }
+  }
+
   const apr = vault.apr ?? 0;
-  const commission = vault.commission ?? 0;
-  const followers = vault.numFollowers ?? 0;
-  const maxFollowers = vault.maxFollowers ?? 0;
+  const commission = vault.leaderCommission ?? 0;
+  const followers = Array.isArray(vault.followers) ? vault.followers.length : 0;
+  // Hyperliquid does not expose a maxFollowers cap
+  const maxFollowers = 0;
   const capacity = maxFollowers > 0 ? Math.round((followers / maxFollowers) * 100) : 0;
 
   const userPrompt = `Hyperliquid Vault Data:
