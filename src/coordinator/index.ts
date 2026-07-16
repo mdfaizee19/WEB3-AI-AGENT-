@@ -19,13 +19,13 @@ import type {
   HyperliquidVaultResult,
 } from '../types';
 
-// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const ETH_ADDRESS_RE = /0x[0-9a-fA-F]{40}/;
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function extractJson(text: string): string {
   const stripped = text.replace(/^```(?:json)?\s*/m, '').replace(/```\s*$/m, '').trim();
@@ -76,7 +76,7 @@ async function groqJson(systemPrompt: string, userPrompt: string): Promise<strin
   throw new Error('unreachable');
 }
 
-// â”€â”€ Stage 1: Web Research (Serper) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 1: Web Research (Serper) ────────────────────────────────────────────
 
 interface SerperOrganicResult { title: string; link: string; snippet: string; source?: string }
 interface SerperResponse { organic?: SerperOrganicResult[] }
@@ -99,7 +99,7 @@ async function webResearch(query: string, maxSources = 6): Promise<WebResearchRe
   return { query, findings, searchedAt: new Date().toISOString() };
 }
 
-// â”€â”€ Stage 2: Source Verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 2: Source Verification ─────────────────────────────────────────────
 
 async function verifyUrl(url: string): Promise<VerificationResult> {
   const controller = new AbortController();
@@ -124,7 +124,7 @@ async function verifySources(urls: string[]): Promise<SourceVerificationResult> 
   return { results, verifiedAt: new Date().toISOString() };
 }
 
-// â”€â”€ Stage 3: Synthesis (Groq) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 3: Synthesis (Groq) ─────────────────────────────────────────────────
 
 async function synthesize(input: SynthesisInput): Promise<SynthesisResult> {
   const { task, webResearch: wr, verification } = input;
@@ -138,7 +138,7 @@ async function synthesize(input: SynthesisInput): Promise<SynthesisResult> {
 
   const findingsText = ordered
     .map((f, i) => {
-      const status = verifiedUrls.has(f.url) ? 'âœ“ verified' : 'âš  unverified';
+      const status = verifiedUrls.has(f.url) ? '✓ verified' : '⚠ unverified';
       return `[${i + 1}] ${f.title} (${status})\nSource: ${f.url}\n${f.snippet}`;
     })
     .join('\n\n');
@@ -206,7 +206,7 @@ Return only valid JSON. No markdown fences around the JSON itself.`;
   }
 }
 
-// â”€â”€ Stage 4: Risk Analysis (Etherscan/Basescan + Groq) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 4: Risk Analysis (Etherscan/Basescan + Groq) ───────────────────────
 
 interface EtherscanResponse<T> { status: string; message: string; result: T }
 interface EthTx { from: string; to: string; value: string; isError: string; functionName: string }
@@ -247,7 +247,7 @@ async function gatherAddressContext(address: string, chainId: number): Promise<s
 
   const src = sourceCode.status === 'fulfilled' ? sourceCode.value?.[0] : null;
   if (src?.ContractName) {
-    lines.push(`Type: Contract â€” ${src.ContractName}`);
+    lines.push(`Type: Contract — ${src.ContractName}`);
     lines.push(`Compiler: ${src.CompilerVersion}`);
     lines.push(`Source verified: ${src.SourceCode ? 'Yes' : 'No'}`);
     if (src.Proxy === '1') lines.push(`Proxy: Yes (implementation: ${src.Implementation})`);
@@ -264,7 +264,7 @@ async function gatherAddressContext(address: string, chainId: number): Promise<s
       const dir = tx.from.toLowerCase() === address.toLowerCase() ? 'OUT' : 'IN ';
       const eth = (Number(tx.value) / 1e18).toFixed(6);
       const fn = tx.functionName ? ` [${tx.functionName.split('(')[0]}]` : '';
-      lines.push(`  ${dir} ${eth} ETH â†' ${tx.to}${fn}${tx.isError === '1' ? ' (FAILED)' : ''}`);
+      lines.push(`  ${dir} ${eth} ETH → ${tx.to}${fn}${tx.isError === '1' ? ' (FAILED)' : ''}`);
     }
   }
 
@@ -272,7 +272,7 @@ async function gatherAddressContext(address: string, chainId: number): Promise<s
     const tokens = tokenTxs.value as TokenTx[];
     const unique = [...new Map(tokens.map((t) => [t.contractAddress, t])).values()];
     lines.push(`\nToken interactions (${unique.length} unique):`);
-    for (const t of unique.slice(0, 10)) lines.push(`  ${t.tokenSymbol} (${t.tokenName}) â€” ${t.contractAddress}`);
+    for (const t of unique.slice(0, 10)) lines.push(`  ${t.tokenSymbol} (${t.tokenName}) — ${t.contractAddress}`);
   }
 
   return lines.join('\n');
@@ -288,14 +288,14 @@ Analyze this address and produce a calibrated risk score. Use the following fram
 
 POSITIVE / LOW-RISK SIGNALS (reduce score):
 - Verified source code: strong trust signal
-- Proxy pattern (e.g. FiatTokenProxy, TransparentUpgradeableProxy, EIP-1967) on a verified contract: NORMAL for major tokens â€” not inherently risky
+- Proxy pattern (e.g. FiatTokenProxy, TransparentUpgradeableProxy, EIP-1967) on a verified contract: NORMAL for major tokens — not inherently risky
 - Well-known contract naming conventions (FiatToken, USDC, USDT, WETH, UniswapV3Pool, etc.): treat as lower-risk unless other red flags exist
 - Established, widely-used standards (ERC-20, ERC-721 with verified source): positive signal
 
 NEUTRAL / CONTEXT-DEPENDENT:
-- Proxy pattern alone: neutral â€” only flag as risky if ALSO unverified, anonymous, or very recently deployed
+- Proxy pattern alone: neutral — only flag as risky if ALSO unverified, anonymous, or very recently deployed
 - Older compiler version: minor informational note, not a primary risk factor for audited contracts
-- Missing transaction history for a contract address: normal â€” contracts don't send txs, users do
+- Missing transaction history for a contract address: normal — contracts don't send txs, users do
 
 ACTUAL RED FLAGS (raise score significantly):
 - Unverified or missing source code on a contract
@@ -314,13 +314,13 @@ Return a JSON object with exactly these fields:
   "report": "<markdown risk report with ## Risk Summary, ## On-Chain Analysis, ## Risk Factors, ## Recommendations sections>"
 }
 
-Scoring guide: 0-30 â†' SAFE, 31-65 â†' CAUTION, 66-100 â†' DANGEROUS. Badge must match riskScore range.
+Scoring guide: 0-30 → SAFE, 31-65 → CAUTION, 66-100 → DANGEROUS. Badge must match riskScore range.
 A verified, named, proxy-pattern stablecoin contract with no anomalous on-chain behaviour should score in the SAFE range.
 Return only valid JSON. No markdown fences.`;
 
   try {
     const text = await groqJson(
-      'You are a blockchain security expert specializing in Ethereum and EVM chain risk analysis. Your goal is accurate, calibrated risk assessment â€” not conservative over-scoring. Well-known, verified, audited contracts should score low. Reserve high scores for genuine threats.',
+      'You are a blockchain security expert specializing in Ethereum and EVM chain risk analysis. Your goal is accurate, calibrated risk assessment — not conservative over-scoring. Well-known, verified, audited contracts should score low. Reserve high scores for genuine threats.',
       userPrompt,
     );
     const parsed = JSON.parse(extractJson(text)) as {
@@ -350,7 +350,7 @@ Return only valid JSON. No markdown fences.`;
   }
 }
 
-// â”€â”€ Request parsers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Request parsers ───────────────────────────────────────────────────────────
 
 // CROO store wraps user input as {"text": "..."} -- unwrap before parsing
 function unwrapText(requirements: string): string {
@@ -422,7 +422,7 @@ function parseDueDiligenceRequest(requirements: string): DueDiligenceRequest {
   return { query: plain, address: match ? match[0] : undefined };
 }
 
-// â”€â”€ Pipelines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Pipelines ─────────────────────────────────────────────────────────────────
 
 async function runResearchPipeline(task: ResearchTask): Promise<SynthesisResult> {
   console.log(`[coordinator] research pipeline: "${task.query}"`);
@@ -459,7 +459,7 @@ async function runDueDiligencePipeline(requirements: string): Promise<DueDiligen
 
   const riskSection = risk
     ? `## Risk Analysis\n\n**Address:** \`${risk.address}\`  \n**Badge:** ${risk.badge} | **Score:** ${risk.riskScore}/100\n\n**Risk Factors:**\n${risk.reasons.map((r) => `- ${r}`).join('\n')}\n\n${risk.report}`
-    : '## Risk Analysis\n\nNo contract address provided â€” risk analysis skipped.';
+    : '## Risk Analysis\n\nNo contract address provided — risk analysis skipped.';
 
   const overallConfidence = risk
     ? Math.round((research.confidenceScore + (100 - risk.riskScore)) / 2)
@@ -487,7 +487,7 @@ async function runDueDiligencePipeline(requirements: string): Promise<DueDiligen
     `## Combined Assessment`,
     ``,
     `**Research confidence:** ${research.confidenceScore}/100 (${research.verifiedSources.length} verified sources)`,
-    risk ? `**Risk score:** ${risk.riskScore}/100 â€” ${risk.badge}` : '',
+    risk ? `**Risk score:** ${risk.riskScore}/100 — ${risk.badge}` : '',
     ``,
     `### Key Research Findings`,
     research.keyFindings.map((f) => `- ${f}`).join('\n'),
@@ -767,7 +767,7 @@ async function main() {
         serviceId: result.negotiation.serviceId,
       });
       console.log(
-        `[coordinator] accepted negotiation â†' order ${result.order.orderId} (service: ${result.negotiation.serviceId})`,
+        `[coordinator] accepted negotiation → order ${result.order.orderId} (service: ${result.negotiation.serviceId})`,
       );
     } catch (err) {
       console.error('[coordinator] failed to accept negotiation:', err);

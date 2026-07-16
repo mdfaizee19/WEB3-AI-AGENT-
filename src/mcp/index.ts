@@ -909,11 +909,11 @@ async function main() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    process.stderr.write(`[attestr-mcp] HTTP server listening on port ${PORT}\n`);
-    process.stderr.write(`[attestr-mcp] MCP endpoint:    ${SERVER_URL}/mcp\n`);
-    process.stderr.write(`[attestr-mcp] OAuth metadata:  ${SERVER_URL}/.well-known/oauth-authorization-server\n`);
-    process.stderr.write(`[attestr-mcp] Connect in Claude.ai → Settings → Integrations → Add MCP Server\n`);
-    process.stderr.write(`[attestr-mcp] Server URL: ${SERVER_URL}\n`);
+    console.log(`[attestr-mcp] HTTP server listening on port ${PORT}`);
+    console.log(`[attestr-mcp] MCP endpoint:    ${SERVER_URL}/mcp`);
+    console.log(`[attestr-mcp] OAuth metadata:  ${SERVER_URL}/.well-known/oauth-authorization-server`);
+    console.log(`[attestr-mcp] Connect in Claude.ai → Settings → Integrations → Add MCP Server`);
+    console.log(`[attestr-mcp] Server URL: ${SERVER_URL}`);
   });
 }
 
